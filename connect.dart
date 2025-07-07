@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:websocket/websocket.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 class ESPConfigPage extends StatefulWidget {
   const ESPConfigPage({Key? key}) : super(key: key);
@@ -9,7 +9,7 @@ class ESPConfigPage extends StatefulWidget {
 }
 
 class _ESPConfigPageState extends State<ESPConfigPage> {
-  Websocket? _websocket;
+  WebSocketChannel? _channel;
   bool _isConnected = false;
 
   final TextEditingController _ssidController = TextEditingController();
@@ -23,22 +23,32 @@ class _ESPConfigPageState extends State<ESPConfigPage> {
 
   void _connectToESP() async {
     try {
-      final ws = await Websocket.connect('ws://192.168.4.1:81');
-      _websocket = ws;
+      final channel = WebSocketChannel.connect(
+        Uri.parse('ws://192.168.4.1:81'),
+      );
+      
+      _channel = channel;
 
-      ws.listen((message) {
-        debugPrint("ESP32 sent: $message");
-        if (!_isConnected) {
-          setState(() => _isConnected = true);
-          _showConnectedDialog();
-        }
-      }, onError: (error) {
-        debugPrint("WebSocket error: $error");
-      }, onDone: () {
-        debugPrint("WebSocket closed.");
-      });
+      channel.stream.listen(
+        (message) {
+          debugPrint("ESP32 sent: $message");
+          if (!_isConnected) {
+            setState(() => _isConnected = true);
+            _showConnectedDialog();
+          }
+        },
+        onError: (error) {
+          debugPrint("WebSocket error: $error");
+          setState(() => _isConnected = false);
+        },
+        onDone: () {
+          debugPrint("WebSocket closed.");
+          setState(() => _isConnected = false);
+        },
+      );
     } catch (e) {
       debugPrint("Could not connect to ESP32: $e");
+      setState(() => _isConnected = false);
     }
   }
 
@@ -86,9 +96,9 @@ class _ESPConfigPageState extends State<ESPConfigPage> {
               final ssid = _ssidController.text.trim();
               final pass = _passController.text.trim();
 
-              if (ssid.isNotEmpty && pass.isNotEmpty && _websocket != null) {
+              if (ssid.isNotEmpty && pass.isNotEmpty && _channel != null) {
                 final message = '$ssid;$pass';
-                _websocket!.add(message);
+                _channel!.sink.add(message);
                 Navigator.of(context).pop();
                 _showSentDialog();
               }
@@ -118,7 +128,7 @@ class _ESPConfigPageState extends State<ESPConfigPage> {
 
   @override
   void dispose() {
-    _websocket?.close();
+    _channel?.sink.close();
     _ssidController.dispose();
     _passController.dispose();
     super.dispose();
